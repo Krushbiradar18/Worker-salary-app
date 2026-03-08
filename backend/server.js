@@ -8,280 +8,247 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req,res)=>{
-    res.send("Worker Salary API Running");
+  res.send("Worker Salary API Running");
+});
+
+
+// ADD SITE
+app.post("/sites",(req,res)=>{
+
+  const {name} = req.body;
+
+  db.run(
+    "INSERT INTO sites(name) VALUES(?)",
+    [name],
+    function(err){
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({message:"Site added"});
+    }
+  );
+
+});
+
+
+// GET SITES
+app.get("/sites",(req,res)=>{
+
+  db.all("SELECT * FROM sites",[],(err,rows)=>{
+
+    if(err){
+      res.status(500).json(err);
+      return;
+    }
+
+    res.json(rows);
+
+  });
+
 });
 
 
 // ADD WORKER
 app.post("/workers",(req,res)=>{
 
-const {name,phone,site_id}=req.body;
+  const {name, phone, site_id, rate, role} = req.body;
 
-db.run(
-"INSERT INTO workers(name,phone,site_id) VALUES(?,?,?)",
-[name,phone,site_id],
-function(err){
+  // Set default values if not provided
+  const workerRate = rate || 500;
+  const workerRole = role || 'Worker';
 
-if(err){
-res.status(500).json(err);
-return;
-}
+  db.run(
+    "INSERT INTO workers(name,phone,site_id,rate,role) VALUES(?,?,?,?,?)",
+    [name,phone,site_id,workerRate,workerRole],
+    function(err){
 
-res.json({
-message:"Worker added"
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({
+        message:"Worker added",
+        id: this.lastID
+      });
+
+    }
+  );
+
 });
 
-});
 
-});
-
-
-// GET ALL WORKERS
+// GET WORKERS BY SITE
 app.get("/workers",(req,res)=>{
 
-const site_id=req.query.site_id;
+  const site_id = req.query.site_id;
 
-db.all(
-"SELECT * FROM workers WHERE site_id=?",
-[site_id],
-(err,rows)=>{
+  db.all(
+    "SELECT * FROM workers WHERE site_id=?",
+    [site_id],
+    (err,rows)=>{
 
-if(err){
-res.status(500).json(err);
-return;
-}
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
 
-res.json(rows);
+      res.json(rows);
+
+    }
+  );
 
 });
 
-});
 
 // DELETE WORKER
+app.delete("/workers/:id",(req,res)=>{
 
-app.delete("/workers/:id", (req, res) => {
+  const id=req.params.id;
 
-    const workerId = req.params.id;
+  db.run(
+    "DELETE FROM workers WHERE id=?",
+    [id],
+    function(err){
 
-    db.run(
-        "DELETE FROM workers WHERE id = ?",
-        [workerId],
-        function(err){
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
 
-            if(err){
-                res.status(500).json(err);
-                return;
-            }
+      res.json({message:"Worker deleted"});
 
-            if(this.changes === 0){
-                res.status(404).json({message:"Worker not found"});
-                return;
-            }
-
-            res.json({
-                message: "Worker deleted"
-            });
-
-        }
-    );
+    }
+  );
 
 });
 
-// SET MONTHLY RATE
-app.post("/rate", (req, res) => {
 
-    const {month, year, rate} = req.body;
+// SAVE MONTHLY RATE
+app.post("/rate",(req,res)=>{
 
-    db.run(
-        "INSERT INTO monthly_settings (month, year, rate) VALUES (?,?,?)",
-        [month, year, rate],
-        function(err){
+  const {month,year,rate}=req.body;
 
-            if(err){
-                res.status(500).json(err);
-                return;
-            }
+  db.run(
+    "INSERT INTO monthly_settings(month,year,rate) VALUES(?,?,?)",
+    [month,year,rate],
+    function(err){
 
-            res.json({
-                message: "Rate saved"
-            });
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
 
-        }
-    );
+      res.json({message:"Rate saved"});
+
+    }
+  );
 
 });
 
-app.get("/rate", (req,res)=>{
 
-    db.all("SELECT * FROM monthly_settings", [], (err, rows)=>{
+// GET ATTENDANCE
+app.get("/attendance",(req,res)=>{
 
-        if(err){
+  db.all(
+    "SELECT * FROM attendance",
+    [],
+    (err,rows)=>{
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json(rows);
+
+    }
+  );
+
+});
+
+
+// SAVE ATTENDANCE
+app.post("/attendance",(req,res)=>{
+
+  const {worker_id,month,year,attendance_count,salary}=req.body;
+
+  // Get worker rate from workers table
+  db.get(
+    "SELECT rate FROM workers WHERE id=?",
+    [worker_id],
+    (err,row)=>{
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      if(!row){
+        res.status(400).json({message:"Worker not found"});
+        return;
+      }
+
+      const workerRate = row.rate;
+
+      // Calculate salary using worker rate or use manual salary if provided
+      const finalSalary = salary ? salary : attendance_count * workerRate;
+
+      db.run(
+        `INSERT INTO attendance(worker_id,month,year,attendance_count,salary)
+         VALUES(?,?,?,?,?)
+         ON CONFLICT(worker_id,month,year)
+         DO UPDATE SET
+         attendance_count=excluded.attendance_count,
+         salary=excluded.salary`,
+        [worker_id,month,year,attendance_count,finalSalary],
+        function(err){
+
+          if(err){
             res.status(500).json(err);
             return;
-        }
+          }
 
-        res.json(rows);
-
-    });
-
-});
-
-// ADD OR UPDATE ATTENDANCE
-app.post("/attendance", (req, res) => {
-
-    const { worker_id, month, year, attendance_count, salary } = req.body;
-
-    // check if record already exists
-    db.get(
-        "SELECT * FROM attendance WHERE worker_id=? AND month=? AND year=?",
-        [worker_id, month, year],
-        (err, existing) => {
-
-            if(err){
-                res.status(500).json(err);
-                return;
-            }
-
-            // if salary already paid → block update
-            if(existing && existing.paid === 1){
-                res.status(400).json({
-                    message:"Salary already paid. Cannot edit."
-                });
-                return;
-            }
-
-            // get rate
-            db.get(
-                "SELECT rate FROM monthly_settings WHERE month=? AND year=?",
-                [month, year],
-                (err,row)=>{
-
-                    if(err){
-                        res.status(500).json(err);
-                        return;
-                    }
-
-                    if(!row){
-                        res.status(400).json({message:"Rate not set"});
-                        return;
-                    }
-
-                    const rate=row.rate;
-
-                    const finalSalary = salary ? salary : attendance_count * rate;
-
-                    // insert or update
-                    db.run(
-                        `INSERT INTO attendance(worker_id,month,year,attendance_count,salary)
-                         VALUES(?,?,?,?,?)
-                         ON CONFLICT(worker_id,month,year)
-                         DO UPDATE SET
-                         attendance_count=excluded.attendance_count,
-                         salary=excluded.salary`,
-                        [worker_id,month,year,attendance_count,finalSalary],
-                        function(err){
-
-                            if(err){
-                                res.status(500).json(err);
-                                return;
-                            }
-
-                            res.json({
-                                message:"Saved",
-                                salary:finalSalary
-                            });
-
-                        }
-                    );
-
-                }
-            );
+          res.json({
+            message:"Saved",
+            salary:finalSalary
+          });
 
         }
-    );
+      );
+
+    }
+  );
 
 });
 
-app.get("/attendance", (req,res)=>{
 
-    db.all("SELECT * FROM attendance", [], (err, rows)=>{
+// MARK PAID
+app.put("/attendance/paid/:id",(req,res)=>{
 
-        if(err){
-            res.status(500).json(err);
-            return;
-        }
+  const id=req.params.id;
 
-        res.json(rows);
+  db.run(
+    "UPDATE attendance SET paid=1 WHERE id=?",
+    [id],
+    function(err){
 
-    });
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
 
-});
+      res.json({message:"Salary marked paid"});
 
-// MARK SALARY AS PAID
-app.put("/attendance/paid/:id", (req, res) => {
-
-    const id = req.params.id;
-
-    db.run(
-        "UPDATE attendance SET paid = 1 WHERE id = ?",
-        [id],
-        function(err){
-
-            if(err){
-                res.status(500).json(err);
-                return;
-            }
-
-            res.json({
-                message:"Salary marked as paid"
-            });
-
-        }
-    );
+    }
+  );
 
 });
 
-// ADD SITE
 
-app.post("/sites",(req,res)=>{
-
-const {name}=req.body;
-
-db.run(
-"INSERT INTO sites(name) VALUES(?)",
-[name],
-function(err){
-
-if(err){
-res.status(500).json(err);
-return;
-}
-
-res.json({
-message:"Site added",
-id:this.lastID
-});
-
-});
-
-});
-
-// GET ALL SITES
-app.get("/sites",(req,res)=>{
-
-db.all("SELECT * FROM sites",[],(err,rows)=>{
-
-if(err){
-res.status(500).json(err);
-return;
-}
-
-res.json(rows);
-
-});
-
-});
-
-app.listen(3001, ()=>{
-    console.log("Server running on port 3001");
+app.listen(3001,()=>{
+  console.log("Server running on port 3001");
 });

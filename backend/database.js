@@ -18,7 +18,9 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       phone TEXT,
-      site_id INTEGER
+      site_id INTEGER,
+      rate INTEGER,
+      role TEXT
     )
   `);
 
@@ -48,4 +50,16 @@ db.serialize(() => {
 
 });
 
+  // Add migration for existing workers table to add rate and role columns
+  db.run(`ALTER TABLE workers ADD COLUMN rate INTEGER DEFAULT 500`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      // Column might already exist, ignore error
+    }
+  });
+
+  db.run(`ALTER TABLE workers ADD COLUMN role TEXT DEFAULT 'Worker'`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      // Column might already exist, ignore error  
+    }
+  });
 module.exports = db;
