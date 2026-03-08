@@ -43,8 +43,24 @@ db.serialize(() => {
       year INTEGER,
       attendance_count INTEGER,
       salary INTEGER,
+      advance INTEGER DEFAULT 0,
+      remark TEXT,
       paid INTEGER DEFAULT 0,
       UNIQUE(worker_id, month, year)
+    )
+  `);
+
+  // ADVANCES - Multiple advance payments per worker per month
+  db.run(`
+    CREATE TABLE IF NOT EXISTS advances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      worker_id INTEGER,
+      month INTEGER,
+      year INTEGER,
+      amount INTEGER,
+      remark TEXT,
+      date TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -60,6 +76,19 @@ db.serialize(() => {
   db.run(`ALTER TABLE workers ADD COLUMN role TEXT DEFAULT 'Worker'`, (err) => {
     if (err && !err.message.includes('duplicate column')) {
       // Column might already exist, ignore error  
+    }
+  });
+
+  // Add migration for existing attendance table to add advance and remark columns
+  db.run(`ALTER TABLE attendance ADD COLUMN advance INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      // Column might already exist, ignore error
+    }
+  });
+
+  db.run(`ALTER TABLE attendance ADD COLUMN remark TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      // Column might already exist, ignore error
     }
   });
 module.exports = db;

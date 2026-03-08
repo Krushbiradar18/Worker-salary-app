@@ -11,6 +11,7 @@ const [selectedSite,setSelectedSite]=useState("");
 
 const [workers,setWorkers]=useState([]);
 const [attendanceData,setAttendanceData]=useState([]);
+const [advancesData,setAdvancesData]=useState({});  // {workerId: [advances...]}
 
 const [name,setName]=useState("");
 const [phone,setPhone]=useState("");
@@ -19,6 +20,8 @@ const [role,setRole]=useState("Worker");
 
 const [attendance,setAttendance]=useState({});
 const [salaryEdit,setSalaryEdit]=useState({});
+const [advanceEdit,setAdvanceEdit]=useState({});
+const [remarkEdit,setRemarkEdit]=useState({});
 
 const [month,setMonth]=useState(new Date().getMonth()+1);
 const [year,setYear]=useState(new Date().getFullYear());
@@ -72,6 +75,46 @@ setWorkers(res.data);
 const getAttendance=async()=>{
 const res=await axios.get(`${API}/attendance`);
 setAttendanceData(res.data);
+};
+
+
+// GET ADVANCES FOR ALL WORKERS
+const getAdvances=async()=>{
+if(workers.length === 0) return;
+
+const advancesMap = {};
+for(const worker of workers) {
+  try {
+    const res = await axios.get(`${API}/advances/${worker.id}/${month}/${year}`);
+    advancesMap[worker.id] = res.data;
+  } catch(err) {
+    advancesMap[worker.id] = [];
+  }
+}
+setAdvancesData(advancesMap);
+};
+
+
+// ADD NEW ADVANCE
+const addAdvance=async(workerId, amount, remark)=>{
+
+if(!amount || amount <= 0) {
+  alert("Enter valid advance amount");
+  return;
+}
+
+await axios.post(`${API}/advances`, {
+  worker_id: workerId,
+  month,
+  year,
+  amount: Number(amount),
+  remark: remark || ""
+});
+
+// Refresh advances data
+getAdvances();
+alert(`Advance of ₹${amount} added successfully!`);
+
 };
 
 
@@ -131,22 +174,47 @@ setSalaryEdit({
 };
 
 
+// CHANGE ADVANCE
+const handleAdvanceChange=(workerId,value)=>{
+
+setAdvanceEdit({
+...advanceEdit,
+[workerId]:value
+});
+
+};
+
+
+// CHANGE REMARK
+const handleRemarkChange=(workerId,value)=>{
+
+setRemarkEdit({
+...remarkEdit,
+[workerId]:value
+});
+
+};
+
+
 // SAVE ATTENDANCE
 const saveAttendance=async(workerId)=>{
 
 const count=attendance[workerId] ?? 0;
-
 const manualSalary=salaryEdit[workerId];
+const advanceAmount=advanceEdit[workerId] ?? 0;
+const remarkText=remarkEdit[workerId] ?? "";
 
 const res=await axios.post(`${API}/attendance`,{
 worker_id:workerId,
 month,
 year,
 attendance_count:count,
-salary:manualSalary
+salary:manualSalary,
+advance:advanceAmount,
+remark:remarkText
 });
 
-alert("Saved salary ₹"+res.data.salary);
+alert(`Saved! Salary: ₹${res.data.salary}, Advance: ₹${res.data.advance}, Final Pay: ₹${res.data.finalPay}`);
 
 getAttendance();
 
@@ -178,6 +246,14 @@ if(selectedSite){
 getWorkers(selectedSite);
 }
 },[selectedSite]);
+
+
+// LOAD ADVANCES WHEN WORKERS, MONTH, OR YEAR CHANGES
+useEffect(()=>{
+if(workers.length > 0) {
+  getAdvances();
+}
+},[workers, month, year]);
 
 
 return(
@@ -275,6 +351,8 @@ Attendance - {monthNames[month-1]} {year}
 <th>Rate</th>
 <th>Attendance</th>
 <th>Salary</th>
+<th>Advances</th>
+<th>Final Pay</th>
 <th>Save</th>
 <th>Paid</th>
 </tr>
@@ -299,6 +377,12 @@ const salaryValue=
 salaryEdit[worker.id] ??
 saved?.salary ??
 attendanceValue*(worker.rate||0);
+
+// Get advances for this worker
+const workerAdvances = advancesData[worker.id] || [];
+const totalAdvances = workerAdvances.reduce((sum, advance) => sum + advance.amount, 0);
+
+const finalPayValue = salaryValue - totalAdvances;
 
 const isPaid=saved?.paid===1;
 
@@ -330,6 +414,112 @@ value={salaryValue}
 disabled={isPaid}
 onChange={(e)=>handleSalaryChange(worker.id,e.target.value)}
 />
+</td>
+
+<td style={{verticalAlign: "top", padding: "8px"}}>
+<div style={{minWidth:"200px"}}>
+  {/* Total Advances Display */}
+  {totalAdvances > 0 ? (
+    <div style={{marginBottom:"8px", padding:"6px", backgroundColor:"#fff3cd", border:"1px solid #ffeaa7", borderRadius:"4px", textAlign:"center"}}>
+      <strong style={{color:"#856404"}}>Total: ₹{totalAdvances}</strong>
+    </div>
+  ) : null}
+  
+  {/* Advanced History List */}
+  {workerAdvances.length > 0 && (
+    <div style={{marginBottom:"8px"}}>
+      {workerAdvances.map((advance, idx) => (
+        <div key={advance.id} style={{
+          display:"flex", 
+          justifyContent:"space-between", 
+          alignItems:"center",
+          padding:"4px 6px", 
+          marginBottom:"3px", 
+          backgroundColor:"#f8f9fa", 
+          border:"1px solid #dee2e6", 
+          borderRadius:"3px",
+          fontSize:"11px"
+        }}>
+          <div>
+            <span style={{fontWeight:"bold", color:"#dc3545"}}>₹{advance.amount}</span>
+            <div style={{color:"#6c757d", fontSize:"10px"}}>{advance.remark || "No reason"}</div>
+          </div>
+          <span style={{fontSize:"10px", color:"#495057", fontWeight:"500"}}>{advance.date}</span>
+        </div>
+      ))}
+    </div>
+  )}
+  
+  {/* Add New Advance */}
+  {!isPaid && (
+    <div style={{border:"1px dashed #ced4da", borderRadius:"4px", padding:"6px", backgroundColor:"#f8f9fa"}}>
+      <div style={{display:"flex", gap:"4px", marginBottom:"4px"}}>
+        <input
+          type="number"
+          placeholder="Amount"
+          id={`advance-${worker.id}`}
+          style={{
+            flex:"1", 
+            padding:"4px", 
+            fontSize:"11px", 
+            border:"1px solid #ced4da", 
+            borderRadius:"3px",
+            outline:"none"
+          }}
+        />
+        <input
+          type="text"
+          placeholder="Reason"
+          id={`remark-${worker.id}`}
+          style={{
+            flex:"2", 
+            padding:"4px", 
+            fontSize:"11px", 
+            border:"1px solid #ced4da", 
+            borderRadius:"3px",
+            outline:"none"
+          }}
+        />
+      </div>
+      <button
+        onClick={()=>{
+          const amount = document.getElementById(`advance-${worker.id}`).value;
+          const remark = document.getElementById(`remark-${worker.id}`).value;
+          if(amount && Number(amount) > 0) {
+            addAdvance(worker.id, amount, remark);
+            document.getElementById(`advance-${worker.id}`).value = '';
+            document.getElementById(`remark-${worker.id}`).value = '';
+          } else {
+            alert("Please enter a valid amount");
+          }
+        }}
+        style={{
+          width:"100%", 
+          padding:"4px", 
+          fontSize:"11px", 
+          backgroundColor:"#28a745", 
+          color:"white", 
+          border:"none", 
+          borderRadius:"3px", 
+          cursor:"pointer"
+        }}
+      >
+        + Add Advance
+      </button>
+    </div>
+  )}
+  
+  {/* Empty State */}
+  {workerAdvances.length === 0 && (
+    <div style={{textAlign:"center", color:"#6c757d", fontSize:"11px", fontStyle:"italic", padding:"12px"}}>
+      No advances given
+    </div>
+  )}
+</div>
+</td>
+
+<td style={{fontWeight:"bold", color: finalPayValue < 0 ? "red" : "green"}}>
+₹{finalPayValue}
 </td>
 
 <td>

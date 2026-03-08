@@ -174,7 +174,7 @@ app.get("/attendance",(req,res)=>{
 // SAVE ATTENDANCE
 app.post("/attendance",(req,res)=>{
 
-  const {worker_id,month,year,attendance_count,salary}=req.body;
+  const {worker_id,month,year,attendance_count,salary,advance,remark}=req.body;
 
   // Get worker rate from workers table
   db.get(
@@ -196,15 +196,21 @@ app.post("/attendance",(req,res)=>{
 
       // Calculate salary using worker rate or use manual salary if provided
       const finalSalary = salary ? salary : attendance_count * workerRate;
+      
+      // Set default values for advance and remark if not provided
+      const advanceAmount = advance || 0;
+      const remarkText = remark || "";
 
       db.run(
-        `INSERT INTO attendance(worker_id,month,year,attendance_count,salary)
-         VALUES(?,?,?,?,?)
+        `INSERT INTO attendance(worker_id,month,year,attendance_count,salary,advance,remark)
+         VALUES(?,?,?,?,?,?,?)
          ON CONFLICT(worker_id,month,year)
          DO UPDATE SET
          attendance_count=excluded.attendance_count,
-         salary=excluded.salary`,
-        [worker_id,month,year,attendance_count,finalSalary],
+         salary=excluded.salary,
+         advance=excluded.advance,
+         remark=excluded.remark`,
+        [worker_id,month,year,attendance_count,finalSalary,advanceAmount,remarkText],
         function(err){
 
           if(err){
@@ -214,7 +220,9 @@ app.post("/attendance",(req,res)=>{
 
           res.json({
             message:"Saved",
-            salary:finalSalary
+            salary:finalSalary,
+            advance:advanceAmount,
+            finalPay: finalSalary - advanceAmount
           });
 
         }
@@ -242,6 +250,109 @@ app.put("/attendance/paid/:id",(req,res)=>{
       }
 
       res.json({message:"Salary marked paid"});
+
+    }
+  );
+
+});
+
+
+// GET ADVANCES FOR A WORKER IN A SPECIFIC MONTH
+app.get("/advances/:workerId/:month/:year",(req,res)=>{
+
+  const {workerId,month,year} = req.params;
+
+  db.all(
+    "SELECT * FROM advances WHERE worker_id=? AND month=? AND year=? ORDER BY created_at DESC",
+    [workerId,month,year],
+    (err,rows)=>{
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json(rows);
+
+    }
+  );
+
+});
+
+
+// ADD NEW ADVANCE
+app.post("/advances",(req,res)=>{
+
+  const {worker_id,month,year,amount,remark} = req.body;
+  
+  if(!worker_id || !month || !year || !amount) {
+    res.status(400).json({message: "Missing required fields"});
+    return;
+  }
+
+  const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+
+  db.run(
+    "INSERT INTO advances(worker_id,month,year,amount,remark,date) VALUES(?,?,?,?,?,?)",
+    [worker_id,month,year,amount,remark || "",currentDate],
+    function(err){
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({
+        message:"Advance added",
+        id: this.lastID,
+        date: currentDate
+      });
+
+    }
+  );
+
+});
+
+
+// DELETE ADVANCE
+app.delete("/advances/:id",(req,res)=>{
+
+  const id = req.params.id;
+
+  db.run(
+    "DELETE FROM advances WHERE id=?",
+    [id],
+    function(err){
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({message:"Advance deleted"});
+
+    }
+  );
+
+});
+
+
+// GET TOTAL ADVANCES FOR A WORKER IN A SPECIFIC MONTH  
+app.get("/advances/total/:workerId/:month/:year",(req,res)=>{
+
+  const {workerId,month,year} = req.params;
+
+  db.get(
+    "SELECT COALESCE(SUM(amount), 0) as total FROM advances WHERE worker_id=? AND month=? AND year=?",
+    [workerId,month,year],
+    (err,row)=>{
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({total: row.total});
 
     }
   );
