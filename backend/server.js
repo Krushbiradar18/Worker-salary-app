@@ -104,6 +104,100 @@ app.get("/workers",(req,res)=>{
 });
 
 
+// TEST ENDPOINT
+app.get("/test", (req,res) => {
+  res.json({message: "Test endpoint working"});
+});
+
+// BULK ADD WORKERS (Must be before DELETE route with :id parameter)
+app.post("/workers/bulk",(req,res)=>{
+  console.log("Bulk endpoint hit with body:", req.body);
+  
+  const {workers} = req.body;
+
+  if(!workers || !Array.isArray(workers) || workers.length === 0){
+    console.log("Invalid workers array");
+    res.status(400).json({error: "Workers array is required"});
+    return;
+  }
+
+  console.log("Processing", workers.length, "workers");
+
+  // Validate each worker
+  for(let i = 0; i < workers.length; i++){
+    const worker = workers[i];
+    if(!worker.name || !worker.phone || !worker.site_id){
+      res.status(400).json({error: `Worker at row ${i+2} is missing required fields (name, phone, site_id)`});
+      return;
+    }
+  }
+
+  let successCount = 0;
+  let errorCount = 0;
+  const errors = [];
+
+  // Process workers one by one
+  const processWorker = (index) => {
+    if (index >= workers.length) {
+      // All workers processed
+      return res.json({
+        message: `Bulk import completed`,
+        successCount,
+        errorCount,
+        errors
+      });
+    }
+
+    const worker = workers[index];
+    const {name, phone, site_id, rate, role} = worker;
+    const workerRate = rate || 500;
+    const workerRole = role || 'Worker';
+
+    db.run(
+      "INSERT INTO workers(name,phone,site_id,rate,role) VALUES(?,?,?,?,?)",
+      [name, phone, site_id, workerRate, workerRole],
+      function(err){
+        if(err){
+          errorCount++;
+          errors.push({row: index + 2, error: err.message});
+        } else {
+          successCount++;
+        }
+        // Process next worker
+        processWorker(index + 1);
+      }
+    );
+  };
+
+  // Start processing from first worker
+  processWorker(0);
+});
+
+
+// UPDATE WORKER RATE
+app.put("/workers/:id/rate",(req,res)=>{
+
+  const id=req.params.id;
+  const {rate} = req.body;
+
+  db.run(
+    "UPDATE workers SET rate=? WHERE id=?",
+    [rate,id],
+    function(err){
+
+      if(err){
+        res.status(500).json(err);
+        return;
+      }
+
+      res.json({message:"Rate updated"});
+
+    }
+  );
+
+});
+
+
 // DELETE WORKER
 app.delete("/workers/:id",(req,res)=>{
 

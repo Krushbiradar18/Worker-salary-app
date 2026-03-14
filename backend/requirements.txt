@@ -1,0 +1,11 @@
+# Backend Requirements
+# Node.js dependencies for the Worker Salary Management System backend
+
+express@^5.2.1
+sqlite3@^5.1.7
+cors@^2.8.6
+body-parser@^2.2.2
+
+# Installation commands:
+# cd backend
+# npm install express@^5.2.1 sqlite3@^5.1.7 cors@^2.8.6 body-parser@^2.2.2
